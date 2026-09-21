@@ -8,6 +8,17 @@ import android.location.Location
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.Button
@@ -154,6 +165,10 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
 
     // Exit screen: shown when Back is pressed (free version only)
     var showExit by remember { mutableStateOf(false) }
+
+    // "Hold to peek": while the eye button is held, all text/controls fade out
+    var peeking by remember { mutableStateOf(false) }
+    val uiAlpha by animateFloatAsState(if (peeking) 0f else 1f, tween(150), label = "ui")
     BackHandler(enabled = !isPro && !showExit) { showExit = true }
     BackHandler(enabled = showExit) { activity.finish() }   // Back again = leave now
     LaunchedEffect(isPro) { if (isPro) showExit = false }   // bought Pro: close the exit screen
@@ -202,28 +217,35 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        TimeBackground(hour)
+        TimeBackground(hour, showScrim = !peeking)
 
         Column(
             modifier = Modifier.fillMaxSize().systemBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Clocks
-            Column(
+            // Clocks (one compact line)
+            Box(
                 modifier = Modifier
-                    .padding(top = 12.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .padding(top = 10.dp, start = 8.dp, end = 8.dp)
+                    .alpha(uiAlpha)
+                    .clip(RoundedCornerShape(12.dp))
                     .background(Color.Black.copy(alpha = 0.5f))
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
-                ClockLine("Elvis Time:", gracelandTime)
-                Box(Modifier.height(4.dp))
-                ClockLine("Local Time:", localTime)
+                ClockBar(gracelandTime, localTime, resetKey = useKm)
+            }
+
+            // Hold-to-peek button
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.End
+            ) {
+                PeekButton(onPeek = { peeking = it })
             }
 
             // Main area
             Column(
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(24.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(24.dp).alpha(uiAlpha),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -260,7 +282,7 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
 
             // Unit slider
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).alpha(uiAlpha),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Imperial", color = Color.White, fontWeight = if (!useKm) FontWeight.Bold else FontWeight.Normal)
@@ -282,7 +304,8 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
             Text(
                 if (useKm) "Kilometers · 24-hour · DD/MM/YYYY" else "Miles · 12-hour · MM/DD/YYYY",
                 color = Color.White.copy(alpha = 0.8f),
-                fontSize = 12.sp
+                fontSize = 12.sp,
+                modifier = Modifier.alpha(uiAlpha)
             )
 
             // Upgrade + ad (hidden for Pro users)
@@ -291,7 +314,7 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
                     onClick = { billing.launchUpgrade(activity) },
                     border = BorderStroke(1.5.dp, Gold1),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Gold1),
-                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
+                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp).alpha(uiAlpha)
                 ) {
                     Text("★ Upgrade to Pro – remove ads")
                 }
@@ -392,18 +415,58 @@ fun formatTime(ms: Long, zone: TimeZone, metric: Boolean): String {
     return SimpleDateFormat(pattern, Locale.US).apply { timeZone = zone }.format(Date(ms))
 }
 
+/** Both clocks on one line. Text shrinks automatically if the screen is narrow. */
 @Composable
-fun ClockLine(label: String, value: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            label,
-            color = Gold1,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Serif,
-            fontSize = 13.sp,
-            modifier = Modifier.width(96.dp)
-        )
-        Text(value, color = Color.White, fontSize = 14.sp)
+fun ClockBar(elvis: String, local: String, resetKey: Boolean) {
+    var size by remember(resetKey) { mutableStateOf(12f) }
+    val label = SpanStyle(color = Gold1, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Serif)
+    val value = SpanStyle(color = Color.White)
+    val text = buildAnnotatedString {
+        withStyle(label) { append("Elvis Time: ") }
+        withStyle(value) { append(elvis) }
+        append("   ")
+        withStyle(label) { append("Local Time: ") }
+        withStyle(value) { append(local) }
+    }
+    Text(
+        text = text,
+        fontSize = size.sp,
+        maxLines = 1,
+        softWrap = false,
+        onTextLayout = { if (it.hasVisualOverflow && size > 8f) size -= 0.5f }
+    )
+}
+
+/** Small eye button. All text hides for as long as a finger is held on it. */
+@Composable
+fun PeekButton(onPeek: (Boolean) -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.5f))
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        onPeek(true)
+                        try { tryAwaitRelease() } finally { onPeek(false) }
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(Modifier.size(22.dp)) {
+            val w = size.width
+            val h = size.height
+            val eye = Path().apply {
+                moveTo(0f, h / 2)
+                quadraticBezierTo(w / 2, -h * 0.35f, w, h / 2)
+                quadraticBezierTo(w / 2, h * 1.35f, 0f, h / 2)
+                close()
+            }
+            drawPath(eye, Color.White, style = Stroke(width = 2.dp.toPx()))
+            drawCircle(Color.White, radius = h * 0.17f, center = center)
+        }
     }
 }
 
@@ -420,8 +483,9 @@ fun backgroundFor(hour: Int): Int = when (hour) {
  *  5-10 morning1 | 11-15 day1 | 16-19 day2 | 20-23 night1 | 0-4 night2
  */
 @Composable
-fun TimeBackground(hour: Int) {
+fun TimeBackground(hour: Int, showScrim: Boolean = true) {
     val res = backgroundFor(hour)
+    val scrimAlpha by animateFloatAsState(if (showScrim) 1f else 0f, tween(150), label = "scrim")
     Box(Modifier.fillMaxSize()) {
         Crossfade(targetState = res, animationSpec = tween(1200), label = "bg") { r ->
             Image(
@@ -433,7 +497,7 @@ fun TimeBackground(hour: Int) {
         }
         // Dark gradient so text stays readable over any photo
         Box(
-            Modifier.fillMaxSize().background(
+            Modifier.fillMaxSize().alpha(scrimAlpha).background(
                 Brush.verticalGradient(
                     listOf(
                         Color.Black.copy(alpha = 0.55f),
@@ -515,12 +579,15 @@ fun ExitOverlay(
                 onClick = onUpgrade,
                 shape = RoundedCornerShape(36.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Gold2, contentColor = Ink),
+                contentPadding = PaddingValues(horizontal = 8.dp),
                 modifier = Modifier.fillMaxWidth().height(130.dp)
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         "★ GET THE FULL VERSION ★",
-                        fontSize = 16.sp,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        softWrap = false,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Serif
                     )
