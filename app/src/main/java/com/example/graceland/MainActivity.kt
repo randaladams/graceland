@@ -7,7 +7,15 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
@@ -143,6 +151,12 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
     val gracelandTime = formatTime(nowMs, TimeZone.getTimeZone("America/Chicago"), useKm)
     val localTime = formatTime(nowMs, TimeZone.getDefault(), useKm)
     val hour = Calendar.getInstance().apply { timeInMillis = nowMs }.get(Calendar.HOUR_OF_DAY)
+
+    // Exit screen: shown when Back is pressed (free version only)
+    var showExit by remember { mutableStateOf(false) }
+    BackHandler(enabled = !isPro && !showExit) { showExit = true }
+    BackHandler(enabled = showExit) { activity.finish() }   // Back again = leave now
+    LaunchedEffect(isPro) { if (isPro) showExit = false }   // bought Pro: close the exit screen
 
     fun fetchDistance() {
         loading = true
@@ -284,6 +298,16 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
                 AdBanner(modifier = Modifier.fillMaxWidth())
             }
         }
+
+        if (showExit) {
+            ExitOverlay(
+                backgroundRes = backgroundFor(hour),
+                lifecycleOwner = activity as LifecycleOwner,
+                onUpgrade = { billing.launchUpgrade(activity) },
+                onStay = { showExit = false },
+                onExit = { activity.finish() }
+            )
+        }
     }
 }
 
@@ -383,19 +407,21 @@ fun ClockLine(label: String, value: String) {
     }
 }
 
+fun backgroundFor(hour: Int): Int = when (hour) {
+    in 5..10 -> R.drawable.morning1
+    in 11..15 -> R.drawable.day1
+    in 16..19 -> R.drawable.day2
+    in 20..23 -> R.drawable.night1
+    else -> R.drawable.night2
+}
+
 /**
  * Photo background chosen by the phone's local hour:
  *  5-10 morning1 | 11-15 day1 | 16-19 day2 | 20-23 night1 | 0-4 night2
  */
 @Composable
 fun TimeBackground(hour: Int) {
-    val res = when (hour) {
-        in 5..10 -> R.drawable.morning1
-        in 11..15 -> R.drawable.day1
-        in 16..19 -> R.drawable.day2
-        in 20..23 -> R.drawable.night1
-        else -> R.drawable.night2
-    }
+    val res = backgroundFor(hour)
     Box(Modifier.fillMaxSize()) {
         Crossfade(targetState = res, animationSpec = tween(1200), label = "bg") { r ->
             Image(
@@ -418,6 +444,101 @@ fun TimeBackground(hour: Int) {
                 )
             )
         )
+    }
+}
+
+/**
+ * Shown when the user presses Back. Counts down from 5 on an "upgrade" button,
+ * then closes the app. The countdown pauses while another screen (like the
+ * Google Play purchase dialog) is on top, so it can't close the app mid-purchase.
+ */
+@Composable
+fun ExitOverlay(
+    backgroundRes: Int,
+    lifecycleOwner: LifecycleOwner,
+    onUpgrade: () -> Unit,
+    onStay: () -> Unit,
+    onExit: () -> Unit
+) {
+    var seconds by remember { mutableIntStateOf(5) }
+
+    LaunchedEffect(Unit) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (seconds > 0) {
+                delay(1000)
+                seconds--
+            }
+            onExit()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            // swallow taps so nothing underneath can be pressed
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { }
+    ) {
+        Image(
+            painter = painterResource(backgroundRes),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)))
+
+        Column(
+            modifier = Modifier.fillMaxSize().systemBarsPadding().padding(28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                "Leaving already?",
+                color = Color.White,
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Serif,
+                fontStyle = FontStyle.Italic,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                "Go Pro and get rid of the ads.",
+                color = Color.White.copy(alpha = 0.9f),
+                fontSize = 18.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 8.dp, bottom = 32.dp)
+            )
+
+            Button(
+                onClick = onUpgrade,
+                shape = RoundedCornerShape(36.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Gold2, contentColor = Ink),
+                modifier = Modifier.fillMaxWidth().height(130.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "★ GET THE FULL VERSION ★",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Serif
+                    )
+                    Text(
+                        "$seconds",
+                        fontSize = 52.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Serif
+                    )
+                }
+            }
+
+            TextButton(onClick = onStay, modifier = Modifier.padding(top = 16.dp)) {
+                Text("Stay in the app", color = Color.White, fontSize = 16.sp)
+            }
+
+            // TODO: add a "Rate us" link to the Play Store listing here later
+        }
     }
 }
 
