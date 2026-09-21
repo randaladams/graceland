@@ -228,11 +228,10 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
             modifier = Modifier.fillMaxSize().systemBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Clocks (one compact line, auto-sized to fit the screen width)
+            // Clocks (two centered lines)
             ClockBar(
                 elvis = gracelandTime,
                 local = localTime,
-                metric = useKm,
                 modifier = Modifier.padding(top = 10.dp, start = 8.dp, end = 8.dp).alpha(uiAlpha)
             )
 
@@ -416,59 +415,29 @@ fun formatTime(ms: Long, zone: TimeZone, metric: Boolean): String {
     return SimpleDateFormat(pattern, Locale.US).apply { timeZone = zone }.format(Date(ms))
 }
 
-private fun clockText(elvis: String, local: String): AnnotatedString {
-    val label = SpanStyle(color = Gold1, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Serif)
-    val value = SpanStyle(color = Color.White)
+private fun clockLine(label: String, value: String): AnnotatedString {
+    val labelStyle = SpanStyle(color = Gold1, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Serif)
+    val valueStyle = SpanStyle(color = Color.White)
     return buildAnnotatedString {
-        withStyle(label) { append("Elvis Time: ") }
-        withStyle(value) { append(elvis) }
-        append("  ")
-        withStyle(label) { append("Local Time: ") }
-        withStyle(value) { append(local) }
+        withStyle(labelStyle) { append("$label ") }
+        withStyle(valueStyle) { append(value) }
     }
 }
 
-/**
- * Both clocks on one line. The font size is worked out from the real screen width
- * (using the widest possible time text), so it always fits and never jitters.
- */
+/** Two centered lines: Elvis Time, then Local Time. */
 @Composable
-fun ClockBar(elvis: String, local: String, metric: Boolean, modifier: Modifier = Modifier) {
-    val measurer = rememberTextMeasurer()
-    val density = LocalDensity.current
-
-    BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        val availPx = with(density) { (maxWidth - 20.dp).toPx() }   // minus the box's inner padding
-
-        val fitSize = remember(availPx, metric) {
-            val sample = if (metric) "00/00/0000 00:00" else "00/00/0000 00:00 AM"
-            val widest = clockText(sample, sample)
-            var fit = 12f
-            while (fit > 6f &&
-                measurer.measure(
-                    widest,
-                    TextStyle(fontSize = fit.sp),
-                    softWrap = false,
-                    maxLines = 1
-                ).size.width > availPx
-            ) {
-                fit -= 0.5f
-            }
-            fit
-        }
-
-        Box(
-            Modifier
+fun ClockBar(elvis: String, local: String, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Column(
+            modifier = Modifier
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color.Black.copy(alpha = 0.5f))
-                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = clockText(elvis, local),
-                fontSize = fitSize.sp,
-                maxLines = 1,
-                softWrap = false
-            )
+            Text(clockLine("Elvis Time:", elvis), fontSize = 12.sp, textAlign = TextAlign.Center)
+            Box(Modifier.height(2.dp))
+            Text(clockLine("Local Time:", local), fontSize = 12.sp, textAlign = TextAlign.Center)
         }
     }
 }
