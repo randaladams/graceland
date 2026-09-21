@@ -9,6 +9,10 @@ import android.location.Location
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.unit.Density
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
@@ -146,8 +150,14 @@ class MainActivity : ComponentActivity() {
         MobileAds.initialize(this)
         billing = BillingManager(this)
         setContent {
-            MaterialTheme {
-                GracelandScreen(billing, this)
+            // Cap the phone's "font size" setting so big text can't break the layout
+            val density = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(density.density, minOf(density.fontScale, 1.1f))
+            ) {
+                MaterialTheme {
+                    GracelandScreen(billing, this)
+                }
             }
         }
     }
@@ -311,12 +321,15 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
             }
 
             // Main area
-            Column(
+            Box(
                 modifier = Modifier.weight(1f).fillMaxWidth()
-                    .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 72.dp)
+                    .padding(horizontal = 24.dp, vertical = 4.dp)
                     .alpha(uiAlpha),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                contentAlignment = Alignment.Center
+            ) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 ElvisButton(loading = loading, onClick = { onButtonPressed() })
 
@@ -324,10 +337,10 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
                 if (message != null || m != null) {
                     Column(
                         modifier = Modifier
-                            .padding(top = 20.dp)
+                            .padding(top = 14.dp)
                             .clip(RoundedCornerShape(20.dp))
                             .background(Color.Black.copy(alpha = 0.45f))
-                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                            .padding(horizontal = 20.dp, vertical = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         if (message != null) {
@@ -347,6 +360,7 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
                         }
                     }
                 }
+            }
             }
 
             // Unit slider
@@ -418,7 +432,7 @@ fun ElvisButton(loading: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(170.dp)
+            .height(140.dp)
             .scale(if (loading) 1f else scale)
             .shadow(16.dp, shape)
             .clip(shape)
@@ -466,7 +480,7 @@ fun ElvisButton(loading: Boolean, onClick: () -> Unit) {
                 )
                 Text(
                     "GRACELAND?",
-                    color = Ink, fontSize = 42.sp, fontWeight = FontWeight.Black,
+                    color = Ink, fontSize = 34.sp, fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Serif, fontStyle = FontStyle.Italic
                 )
                 Text(
