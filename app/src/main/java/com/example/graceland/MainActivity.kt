@@ -2,6 +2,7 @@ package com.example.graceland
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Context
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.location.Location
@@ -90,7 +91,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.google.android.gms.ads.AdError
 import com.google.android.gms.ads.AdRequest
+import com.google.android.gms.ads.FullScreenContentCallback
+import com.google.android.gms.ads.LoadAdError
+import com.google.android.gms.ads.interstitial.InterstitialAd
+import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
 import com.google.android.gms.ads.MobileAds
@@ -116,6 +122,11 @@ private const val METERS_PER_MILE = 1609.344
 
 // Google's TEST banner ad unit. Replace with your own before release.
 private const val BANNER_AD_UNIT = "ca-app-pub-3940256099942544/6300978111"
+
+// Google's TEST full-screen (interstitial) ad unit. Replace with your own before release.
+private const val INTERSTITIAL_AD_UNIT = "ca-app-pub-3940256099942544/1033173712"
+private const val AD_EVERY_N_LOOKUPS = 4
+private const val MIN_MS_BETWEEN_ADS = 60_000L
 
 // Palette: Vegas-era gold, midnight blue, ruby
 private val Gold1 = Color(0xFFFFE27A)
@@ -154,6 +165,61 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
     var message by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
 
+    // Full-screen ad: every 4th lookup (free version only), shown between the tap and the result
+    val prefs = remember { context.getSharedPreferences("graceland", Context.MODE_PRIVATE) }
+    var interstitial by remember { mutableStateOf<InterstitialAd?>(null) }
+    var adActive by remember { mutableStateOf(false) }
+    var pendingMeters by remember { mutableStateOf<Double?>(null) }
+    var lastAdMs by remember { mutableLongStateOf(0L) }
+
+    fun loadInterstitial() {
+        InterstitialAd.load(
+            context,
+            INTERSTITIAL_AD_UNIT,
+            AdRequest.Builder().build(),
+            object : InterstitialAdLoadCallback() {
+                override fun onAdLoaded(ad: InterstitialAd) { interstitial = ad }
+                override fun onAdFailedToLoad(error: LoadAdError) { interstitial = null }
+            }
+        )
+    }
+
+    fun maybeShowInterstitial() {
+        val taps = prefs.getInt("taps", 0) + 1
+        prefs.edit().putInt("taps", taps).apply()
+        val ad = interstitial
+        val now = System.currentTimeMillis()
+        if (!isPro && taps % AD_EVERY_N_LOOKUPS == 0 && ad != null && now - lastAdMs > MIN_MS_BETWEEN_ADS) {
+            lastAdMs = now
+            adActive = true
+            ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+                override fun onAdDismissedFullScreenContent() {
+                    interstitial = null
+                    adActive = false
+                    loadInterstitial()
+                }
+                override fun onAdFailedToShowFullScreenContent(error: AdError) {
+                    interstitial = null
+                    adActive = false
+                    loadInterstitial()
+                }
+            }
+            ad.show(activity)
+        }
+    }
+
+    LaunchedEffect(isPro) { if (!isPro) loadInterstitial() }
+
+    // Reveal the result only when we have it AND any ad has been closed
+    LaunchedEffect(pendingMeters, adActive) {
+        val m = pendingMeters
+        if (m != null && !adActive) {
+            meters = m
+            pendingMeters = null
+            loading = false
+        }
+    }
+
     val fused = remember { LocationServices.getFusedLocationProviderClient(context) }
 
     // Clock: ticks every second
@@ -181,17 +247,18 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
     fun fetchDistance() {
         loading = true
         message = null
+        maybeShowInterstitial()
         fused.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, null)
             .addOnSuccessListener { loc ->
-                loading = false
                 if (loc == null) {
+                    loading = false
                     message = "Couldn't get your location. Is location turned on?"
                 } else {
                     val out = FloatArray(1)
                     Location.distanceBetween(
                         loc.latitude, loc.longitude, GRACELAND_LAT, GRACELAND_LON, out
                     )
-                    meters = out[0].toDouble()
+                    pendingMeters = out[0].toDouble()
                 }
             }
             .addOnFailureListener {
@@ -314,7 +381,7 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
                     onClick = { billing.launchUpgrade(activity) },
                     border = BorderStroke(1.5.dp, Gold1),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Gold1),
-                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp).alpha(uiAlpha)
+                    modifier = Modifier.padding(top = 8.dp, bottom = 24.dp).alpha(uiAlpha)
                 ) {
                     Text("★ Upgrade to Pro – remove ads")
                 }
