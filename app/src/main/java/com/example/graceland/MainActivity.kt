@@ -312,7 +312,9 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
 
             // Main area
             Column(
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(24.dp).alpha(uiAlpha),
+                modifier = Modifier.weight(1f).fillMaxWidth()
+                    .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 72.dp)
+                    .alpha(uiAlpha),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -322,7 +324,7 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
                 if (message != null || m != null) {
                     Column(
                         modifier = Modifier
-                            .padding(top = 28.dp)
+                            .padding(top = 20.dp)
                             .clip(RoundedCornerShape(20.dp))
                             .background(Color.Black.copy(alpha = 0.45f))
                             .padding(horizontal = 20.dp, vertical = 14.dp),
@@ -333,15 +335,15 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
                         } else if (m != null) {
                             val value = if (useKm) m / 1000.0 else m / METERS_PER_MILE
                             val unit = if (useKm) "kilometers" else "miles"
-                            Text("Graceland, Elvis's home, is", color = Color.White, fontSize = 18.sp)
+                            Text("Graceland, Elvis's home, is", color = Color.White, fontSize = 15.sp)
                             Text(
                                 "%,.0f".format(value),
                                 color = Gold1,
-                                fontSize = 60.sp,
+                                fontSize = 42.sp,
                                 fontWeight = FontWeight.Black,
                                 fontFamily = FontFamily.Serif
                             )
-                            Text("$unit away", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Medium)
+                            Text("$unit away", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
