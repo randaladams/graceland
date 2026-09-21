@@ -202,9 +202,9 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
                     .background(Color.Black.copy(alpha = 0.5f))
                     .padding(horizontal = 16.dp, vertical = 10.dp)
             ) {
-                ClockLine("Graceland Time", gracelandTime)
+                ClockLine("Elvis Time:", gracelandTime)
                 Box(Modifier.height(4.dp))
-                ClockLine("Local Time", localTime)
+                ClockLine("Local Time:", localTime)
             }
 
             // Main area
@@ -364,7 +364,7 @@ fun ElvisButton(loading: Boolean, onClick: () -> Unit) {
 
 /** Formats a date and time. Imperial = MM/DD/YYYY 12-hour, Metric = DD/MM/YYYY 24-hour. */
 fun formatTime(ms: Long, zone: TimeZone, metric: Boolean): String {
-    val pattern = if (metric) "dd/MM/yyyy HH:mm z" else "MM/dd/yyyy h:mm a z"
+    val pattern = if (metric) "dd/MM/yyyy HH:mm" else "MM/dd/yyyy h:mm a"
     return SimpleDateFormat(pattern, Locale.US).apply { timeZone = zone }.format(Date(ms))
 }
 
@@ -377,7 +377,7 @@ fun ClockLine(label: String, value: String) {
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Serif,
             fontSize = 13.sp,
-            modifier = Modifier.width(112.dp)
+            modifier = Modifier.width(96.dp)
         )
         Text(value, color = Color.White, fontSize = 14.sp)
     }
