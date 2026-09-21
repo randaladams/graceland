@@ -120,8 +120,8 @@ import java.util.TimeZone
 import kotlinx.coroutines.delay
 
 // Graceland, 3764 Elvis Presley Blvd, Memphis, TN
-private const val GRACELAND_LAT = 35.0477
-private const val GRACELAND_LON = -90.0261
+private const val GRACELAND_LAT = 35.045944
+private const val GRACELAND_LON = -90.022944
 private const val METERS_PER_MILE = 1609.344
 
 // Google's TEST banner ad unit. Replace with your own before release.
