@@ -8,6 +8,11 @@ import android.location.Location
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.PaddingValues
@@ -170,7 +175,7 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
     var peeking by remember { mutableStateOf(false) }
     val uiAlpha by animateFloatAsState(if (peeking) 0f else 1f, tween(150), label = "ui")
     BackHandler(enabled = !isPro && !showExit) { showExit = true }
-    BackHandler(enabled = showExit) { activity.finish() }   // Back again = leave now
+    BackHandler(enabled = showExit) { }   // ignore Back while the exit screen counts down
     LaunchedEffect(isPro) { if (isPro) showExit = false }   // bought Pro: close the exit screen
 
     fun fetchDistance() {
@@ -223,17 +228,13 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
             modifier = Modifier.fillMaxSize().systemBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Clocks (one compact line)
-            Box(
-                modifier = Modifier
-                    .padding(top = 10.dp, start = 8.dp, end = 8.dp)
-                    .alpha(uiAlpha)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                ClockBar(gracelandTime, localTime, resetKey = useKm)
-            }
+            // Clocks (one compact line, auto-sized to fit the screen width)
+            ClockBar(
+                elvis = gracelandTime,
+                local = localTime,
+                metric = useKm,
+                modifier = Modifier.padding(top = 10.dp, start = 8.dp, end = 8.dp).alpha(uiAlpha)
+            )
 
             // Hold-to-peek button
             Row(
@@ -415,26 +416,61 @@ fun formatTime(ms: Long, zone: TimeZone, metric: Boolean): String {
     return SimpleDateFormat(pattern, Locale.US).apply { timeZone = zone }.format(Date(ms))
 }
 
-/** Both clocks on one line. Text shrinks automatically if the screen is narrow. */
-@Composable
-fun ClockBar(elvis: String, local: String, resetKey: Boolean) {
-    var size by remember(resetKey) { mutableStateOf(12f) }
+private fun clockText(elvis: String, local: String): AnnotatedString {
     val label = SpanStyle(color = Gold1, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Serif)
     val value = SpanStyle(color = Color.White)
-    val text = buildAnnotatedString {
+    return buildAnnotatedString {
         withStyle(label) { append("Elvis Time: ") }
         withStyle(value) { append(elvis) }
-        append("   ")
+        append("  ")
         withStyle(label) { append("Local Time: ") }
         withStyle(value) { append(local) }
     }
-    Text(
-        text = text,
-        fontSize = size.sp,
-        maxLines = 1,
-        softWrap = false,
-        onTextLayout = { if (it.hasVisualOverflow && size > 8f) size -= 0.5f }
-    )
+}
+
+/**
+ * Both clocks on one line. The font size is worked out from the real screen width
+ * (using the widest possible time text), so it always fits and never jitters.
+ */
+@Composable
+fun ClockBar(elvis: String, local: String, metric: Boolean, modifier: Modifier = Modifier) {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+
+    BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        val availPx = with(density) { (maxWidth - 20.dp).toPx() }   // minus the box's inner padding
+
+        val fitSize = remember(availPx, metric) {
+            val sample = if (metric) "00/00/0000 00:00" else "00/00/0000 00:00 AM"
+            val widest = clockText(sample, sample)
+            var fit = 12f
+            while (fit > 6f &&
+                measurer.measure(
+                    widest,
+                    TextStyle(fontSize = fit.sp),
+                    softWrap = false,
+                    maxLines = 1
+                ).size.width > availPx
+            ) {
+                fit -= 0.5f
+            }
+            fit
+        }
+
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.Black.copy(alpha = 0.5f))
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = clockText(elvis, local),
+                fontSize = fitSize.sp,
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+    }
 }
 
 /** Small eye button. All text hides for as long as a finger is held on it. */
