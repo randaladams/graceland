@@ -33,27 +33,29 @@ jobs:
   # leave this job in place even before you've added them.
   build-release:
     runs-on: ubuntu-latest
+    env:
+      HAS_SIGNING: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
     steps:
       - uses: actions/checkout@v4
-        if: ${{ secrets.RELEASE_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_SIGNING != '' }}
 
       - uses: actions/setup-java@v4
-        if: ${{ secrets.RELEASE_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_SIGNING != '' }}
         with:
           distribution: temurin
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@v4
-        if: ${{ secrets.RELEASE_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_SIGNING != '' }}
         with:
           gradle-version: 8.9
 
       - name: Decode signing keystore
-        if: ${{ secrets.RELEASE_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_SIGNING != '' }}
         run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
 
       - name: Build signed release bundle (.aab)
-        if: ${{ secrets.RELEASE_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_SIGNING != '' }}
         env:
           RELEASE_KEYSTORE_PATH: ${{ github.workspace }}/release.keystore
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
@@ -66,7 +68,7 @@ jobs:
         run: rm -f release.keystore
 
       - uses: actions/upload-artifact@v4
-        if: ${{ secrets.RELEASE_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_SIGNING != '' }}
         with:
           name: graceland-release-aab
           path: app/build/outputs/bundle/release/app-release.aab
