@@ -12,7 +12,7 @@ android {
         applicationId = "com.example.graceland"
         minSdk = 24
         targetSdk = 34
-        versionCode = 3
+        versionCode = 4
         versionName = "1.0"
     }
 
