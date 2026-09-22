@@ -271,7 +271,10 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
 
     // "Hold to peek": while the eye button is held, all text/controls fade out
     var peeking by remember { mutableStateOf(false) }
-    val uiAlpha by animateFloatAsState(if (peeking) 0f else 1f, tween(150), label = "ui")
+    // Hold the nav icon: fades the UI too, and shows a compass pointing at Graceland
+    var navHeld by remember { mutableStateOf(false) }
+    val fadeUi = peeking || navHeld
+    val uiAlpha by animateFloatAsState(if (fadeUi) 0f else 1f, tween(150), label = "ui")
     BackHandler(enabled = !isPro && !showExit) { showExit = true }
     BackHandler(enabled = showExit) { }   // ignore Back while the exit screen counts down
     LaunchedEffect(isPro) { if (isPro) showExit = false }   // bought Pro: close the exit screen
@@ -279,9 +282,6 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
     // Which Elvis place we're measuring to. Free users are locked to Graceland.
     var selectedPlace by remember { mutableStateOf(ELVIS_PLACES[0]) }
     LaunchedEffect(isPro) { if (!isPro) selectedPlace = ELVIS_PLACES[0] }
-
-    // Compass mode toggle (free feature)
-    var showCompass by remember { mutableStateOf(false) }
 
     fun fetchDistance() {
         loading = true
@@ -328,7 +328,7 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        TimeBackground(hour, showScrim = !peeking)
+        TimeBackground(hour, showScrim = !fadeUi)
 
         Column(
             modifier = Modifier.fillMaxSize().systemBarsPadding(),
@@ -341,7 +341,7 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                 modifier = Modifier.padding(top = 10.dp, start = 8.dp, end = 8.dp).alpha(uiAlpha)
             )
 
-            // Hold-to-peek button (+ a debug-only Pro switch for testing, far left)
+            // Hold-to-peek and hold-for-compass buttons (+ a debug-only Pro switch, far left)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -358,7 +358,10 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                 } else {
                     Box(Modifier)
                 }
-                PeekButton(onPeek = { peeking = it })
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PeekButton(onPeek = { peeking = it })
+                    NavButton(onHold = { navHeld = it })
+                }
             }
 
             // Place picker (Pro feature): choose which Elvis site to measure to
@@ -370,31 +373,13 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                 )
             }
 
-            // Compass toggle (free feature)
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp).alpha(uiAlpha),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                TextButton(onClick = { showCompass = !showCompass }) {
-                    Text(
-                        if (showCompass) "🎯  Back to the button" else "🧭  Point me to ${'$'}{selectedPlace.label}",
-                        color = Gold1,
-                        fontSize = 14.sp,
-                        fontFamily = FontFamily.Serif
-                    )
-                }
-            }
-
-            // Main area: either the big tap button, or the compass
+            // Main area
             Box(
                 modifier = Modifier.weight(1f).fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 4.dp)
                     .alpha(uiAlpha),
                 contentAlignment = Alignment.Center
             ) {
-            if (showCompass) {
-                CompassView(destination = selectedPlace)
-            } else {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -430,7 +415,6 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                         }
                     }
                 }
-            }
             }
             }
 
@@ -474,6 +458,10 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                 }
                 AdBanner(modifier = Modifier.fillMaxWidth())
             }
+        }
+
+        if (navHeld) {
+            CompassOverlay(destination = ELVIS_PLACES[0])
         }
 
         if (showExit) {
@@ -611,20 +599,59 @@ fun bearingTo(fromLat: Double, fromLon: Double, toLat: Double, toLon: Double): F
  * Free feature: works for whichever place is currently selected.
  */
 @SuppressLint("MissingPermission")
+/** Small nav/compass icon button, matching PeekButton's style. Held, not tapped. */
 @Composable
-fun CompassView(destination: ElvisPlace) {
+fun NavButton(onHold: (Boolean) -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.5f))
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        onHold(true)
+                        try { tryAwaitRelease() } finally { onHold(false) }
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(Modifier.size(20.dp)) {
+            drawCircle(Color.White, style = Stroke(width = 1.6.dp.toPx()))
+            val path = Path().apply {
+                moveTo(size.width * 0.5f, size.height * 0.08f)
+                lineTo(size.width * 0.34f, size.height * 0.58f)
+                lineTo(size.width * 0.5f, size.height * 0.44f)
+                lineTo(size.width * 0.66f, size.height * 0.58f)
+                close()
+            }
+            drawPath(path, Gold1, style = Fill)
+        }
+    }
+}
+
+/**
+ * Full-screen compass shown while the nav icon is held. Always points at [destination]
+ * (Graceland), since the other Elvis sites are close enough together that a separate
+ * bearing for each isn't useful.
+ */
+@Composable
+fun CompassOverlay(destination: ElvisPlace) {
     val context = LocalContext.current
     var azimuth by remember { mutableFloatStateOf(0f) }      // which way the phone is facing (0 = north)
     var bearing by remember { mutableStateOf<Float?>(null) } // which way the destination is
     var hasSensor by remember { mutableStateOf(true) }
+    val hasLocationPermission = remember {
+        listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            .any { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
+    }
 
     // Orientation sensor
     DisposableEffect(Unit) {
         val sm = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val rotationSensor = sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-        if (rotationSensor == null) {
-            hasSensor = false
-        }
+        if (rotationSensor == null) hasSensor = false
         val listener = object : SensorEventListener {
             val rotMatrix = FloatArray(9)
             val orientation = FloatArray(3)
@@ -641,26 +668,8 @@ fun CompassView(destination: ElvisPlace) {
         onDispose { sm.unregisterListener(listener) }
     }
 
-    // Make sure we have location permission before asking for a fix
-    var hasLocationPermission by remember {
-        mutableStateOf(
-            listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-                .any { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
-        )
-    }
-    val compassPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { grants -> hasLocationPermission = grants.values.any { it } }
-    LaunchedEffect(Unit) {
-        if (!hasLocationPermission) {
-            compassPermissionLauncher.launch(
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-            )
-        }
-    }
-
-    // One-shot location fix, just to work out the bearing
-    LaunchedEffect(destination, hasLocationPermission) {
+    // One-shot location fix (only if permission was already granted earlier)
+    LaunchedEffect(hasLocationPermission) {
         if (!hasLocationPermission) return@LaunchedEffect
         val fused = LocationServices.getFusedLocationProviderClient(context)
         fused.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, null)
@@ -671,70 +680,85 @@ fun CompassView(destination: ElvisPlace) {
             }
     }
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            "🧭  ${destination.label}",
-            color = Color.White,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Serif,
-            textAlign = TextAlign.Center
-        )
-        Box(
-            modifier = Modifier
-                .padding(top = 24.dp)
-                .size(220.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.45f)),
-            contentAlignment = Alignment.Center
-        ) {
-            // Dial with N/E/S/W
-            Canvas(Modifier.fillMaxSize()) {
-                drawCircle(Gold1.copy(alpha = 0.6f), style = Stroke(width = 2.dp.toPx()))
-            }
-            listOf("N" to 0f, "E" to 90f, "S" to 180f, "W" to 270f).forEach { (label, deg) ->
+    Box(Modifier.fillMaxSize().systemBarsPadding(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .padding(horizontal = 18.dp, vertical = 10.dp)
+            ) {
                 Text(
-                    label,
-                    color = if (label == "N") Gold1 else Color.White.copy(alpha = 0.7f),
-                    fontSize = 13.sp,
+                    "${destination.label} is this way",
+                    color = Color.White,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .rotate(deg)
-                        .padding(top = 8.dp)
-                        .align(Alignment.TopCenter)
-                        .rotate(-deg)
+                    fontFamily = FontFamily.Serif,
+                    textAlign = TextAlign.Center
                 )
             }
-            // Arrow, rotated to the destination's bearing relative to the phone's facing
-            val b = bearing
-            val pointer = (b?.minus(azimuth)) ?: 0f
-            Canvas(
+            Box(
                 modifier = Modifier
-                    .size(120.dp)
-                    .rotate(pointer)
+                    .padding(top = 24.dp)
+                    .size(220.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.45f)),
+                contentAlignment = Alignment.Center
             ) {
-                val path = Path().apply {
-                    moveTo(size.width / 2, 6.dp.toPx())
-                    lineTo(size.width * 0.32f, size.height * 0.62f)
-                    lineTo(size.width / 2, size.height * 0.48f)
-                    lineTo(size.width * 0.68f, size.height * 0.62f)
-                    close()
+                Canvas(Modifier.fillMaxSize()) {
+                    drawCircle(Gold1.copy(alpha = 0.6f), style = Stroke(width = 2.dp.toPx()))
                 }
-                drawPath(path, if (b != null) Color(0xFFC2185B) else Color.Gray, style = Fill)
+                listOf("N" to 0f, "E" to 90f, "S" to 180f, "W" to 270f).forEach { (label, deg) ->
+                    Text(
+                        label,
+                        color = if (label == "N") Gold1 else Color.White.copy(alpha = 0.7f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .rotate(deg)
+                            .padding(top = 8.dp)
+                            .align(Alignment.TopCenter)
+                            .rotate(-deg)
+                    )
+                }
+                // Arrow, rotated to the destination's bearing relative to the phone's facing
+                val b = bearing
+                val pointer = (b?.minus(azimuth)) ?: 0f
+                Canvas(
+                    modifier = Modifier
+                        .size(120.dp)
+                        .rotate(pointer)
+                ) {
+                    val path = Path().apply {
+                        moveTo(size.width / 2, 6.dp.toPx())
+                        lineTo(size.width * 0.32f, size.height * 0.62f)
+                        lineTo(size.width / 2, size.height * 0.48f)
+                        lineTo(size.width * 0.68f, size.height * 0.62f)
+                        close()
+                    }
+                    drawPath(path, if (b != null) Color(0xFFC2185B) else Color.Gray, style = Fill)
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .padding(top = 20.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    when {
+                        !hasLocationPermission -> "Tap the button once first to allow location."
+                        !hasSensor -> "This phone doesn't have a compass sensor."
+                        bearing == null -> "Finding your location…"
+                        else -> "Turn until the arrow points up"
+                    },
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center
+                )
             }
         }
-        Text(
-            when {
-                !hasLocationPermission -> "Location permission is needed to find the direction."
-                !hasSensor -> "This phone doesn't have a compass sensor."
-                bearing == null -> "Finding your location…"
-                else -> "Turn until the arrow points up"
-            },
-            color = Color.White.copy(alpha = 0.85f),
-            fontSize = 14.sp,
-            modifier = Modifier.padding(top = 20.dp),
-            textAlign = TextAlign.Center
-        )
     }
 }
 
