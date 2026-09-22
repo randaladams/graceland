@@ -5,20 +5,38 @@ plugins {
 }
 
 android {
-    namespace = "com.example.graceland"
+    namespace = "com.adamselite.gracelandmiles"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.graceland"
+        applicationId = "com.adamselite.gracelandmiles"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
     }
 
+    // Release signing: reads from environment variables so no secret ever lives
+    // in this file or in git. Locally, unset vars just skip signing (debug builds
+    // are unaffected). In GitHub Actions, these are populated from repo secrets.
+    signingConfigs {
+        create("release") {
+            val ksPath = System.getenv("RELEASE_KEYSTORE_PATH")
+            if (ksPath != null) {
+                storeFile = file(ksPath)
+                storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (System.getenv("RELEASE_KEYSTORE_PATH") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
