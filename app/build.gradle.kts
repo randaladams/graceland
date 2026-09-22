@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.adamselite.gracelandmiles"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.adamselite.gracelandmiles"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
     }
@@ -60,5 +60,5 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("com.google.android.gms:play-services-ads:23.3.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
-    implementation("com.android.billingclient:billing-ktx:7.1.1")
+    implementation("com.android.billingclient:billing-ktx:8.0.0")
 }
