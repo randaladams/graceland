@@ -3,6 +3,10 @@ package com.example.graceland
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.location.Location
@@ -29,6 +33,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.drawscope.Fill
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.Button
@@ -108,6 +120,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.layout.ContentScale
@@ -120,8 +133,13 @@ import java.util.TimeZone
 import kotlinx.coroutines.delay
 
 // Graceland, 3764 Elvis Presley Blvd, Memphis, TN
-private const val GRACELAND_LAT = 35.045944
-private const val GRACELAND_LON = -90.022944
+data class ElvisPlace(val label: String, val lat: Double, val lon: Double, val isFree: Boolean)
+
+val ELVIS_PLACES = listOf(
+    ElvisPlace("Graceland", 35.045944, -90.022944, isFree = true),
+    ElvisPlace("Sun Studio", 35.139247, -90.037678, isFree = false),
+    ElvisPlace("His Birthplace, Tupelo", 34.259971, -88.679963, isFree = false)
+)
 private const val METERS_PER_MILE = 1609.344
 
 // Google's TEST banner ad unit. Replace with your own before release.
@@ -156,7 +174,7 @@ class MainActivity : ComponentActivity() {
                 LocalDensity provides Density(density.density, minOf(density.fontScale, 1.1f))
             ) {
                 MaterialTheme {
-                    GracelandScreen(billing, this)
+                    GracelandScreen(billing, this, isDebugBuild = BuildConfig.DEBUG)
                 }
             }
         }
@@ -165,9 +183,13 @@ class MainActivity : ComponentActivity() {
 
 @SuppressLint("MissingPermission")
 @Composable
-fun GracelandScreen(billing: BillingManager, activity: Activity) {
+fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: Boolean = false) {
     val context = LocalContext.current
-    val isPro by billing.isPro.collectAsState()
+    val realIsPro by billing.isPro.collectAsState()
+
+    // Debug-only override so a developer can flip Pro on/off without a real purchase.
+    var debugProOverride by remember { mutableStateOf<Boolean?>(null) }
+    val isPro = if (isDebugBuild) (debugProOverride ?: realIsPro) else realIsPro
 
     var sliderPos by remember { mutableFloatStateOf(0f) } // 0 = miles, 1 = km
     val useKm = sliderPos >= 0.5f
@@ -254,6 +276,13 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
     BackHandler(enabled = showExit) { }   // ignore Back while the exit screen counts down
     LaunchedEffect(isPro) { if (isPro) showExit = false }   // bought Pro: close the exit screen
 
+    // Which Elvis place we're measuring to. Free users are locked to Graceland.
+    var selectedPlace by remember { mutableStateOf(ELVIS_PLACES[0]) }
+    LaunchedEffect(isPro) { if (!isPro) selectedPlace = ELVIS_PLACES[0] }
+
+    // Compass mode toggle (free feature)
+    var showCompass by remember { mutableStateOf(false) }
+
     fun fetchDistance() {
         loading = true
         message = null
@@ -266,7 +295,7 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
                 } else {
                     val out = FloatArray(1)
                     Location.distanceBetween(
-                        loc.latitude, loc.longitude, GRACELAND_LAT, GRACELAND_LON, out
+                        loc.latitude, loc.longitude, selectedPlace.lat, selectedPlace.lon, out
                     )
                     pendingMeters = out[0].toDouble()
                 }
@@ -312,26 +341,65 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
                 modifier = Modifier.padding(top = 10.dp, start = 8.dp, end = 8.dp).alpha(uiAlpha)
             )
 
-            // Hold-to-peek button
+            // Hold-to-peek button (+ a debug-only Pro switch for testing, far left)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                if (isDebugBuild) {
+                    TextButton(onClick = { debugProOverride = !isPro }) {
+                        Text(
+                            if (isPro) "DEBUG: Pro ON" else "DEBUG: Pro OFF",
+                            color = if (isPro) Gold1 else Color.White,
+                            fontSize = 11.sp
+                        )
+                    }
+                } else {
+                    Box(Modifier)
+                }
                 PeekButton(onPeek = { peeking = it })
             }
 
-            // Main area
+            // Place picker (Pro feature): choose which Elvis site to measure to
+            if (isPro) {
+                PlacePicker(
+                    selected = selectedPlace,
+                    onSelect = { selectedPlace = it; meters = null; message = null },
+                    modifier = Modifier.padding(top = 4.dp).alpha(uiAlpha)
+                )
+            }
+
+            // Compass toggle (free feature)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp).alpha(uiAlpha),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                TextButton(onClick = { showCompass = !showCompass }) {
+                    Text(
+                        if (showCompass) "🎯  Back to the button" else "🧭  Point me to ${'$'}{selectedPlace.label}",
+                        color = Gold1,
+                        fontSize = 14.sp,
+                        fontFamily = FontFamily.Serif
+                    )
+                }
+            }
+
+            // Main area: either the big tap button, or the compass
             Box(
                 modifier = Modifier.weight(1f).fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 4.dp)
                     .alpha(uiAlpha),
                 contentAlignment = Alignment.Center
             ) {
+            if (showCompass) {
+                CompassView(destination = selectedPlace)
+            } else {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                ElvisButton(loading = loading, onClick = { onButtonPressed() })
+                ElvisButton(place = selectedPlace, loading = loading, onClick = { onButtonPressed() })
 
                 val m = meters
                 if (message != null || m != null) {
@@ -348,7 +416,9 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
                         } else if (m != null) {
                             val value = if (useKm) m / 1000.0 else m / METERS_PER_MILE
                             val unit = if (useKm) "kilometers" else "miles"
-                            Text("Graceland, Elvis's home, is", color = Color.White, fontSize = 15.sp)
+                            val intro = if (selectedPlace.label == "Graceland")
+                                "Graceland, Elvis's home, is" else "${selectedPlace.label} is"
+                            Text(intro, color = Color.White, fontSize = 15.sp, textAlign = TextAlign.Center)
                             Text(
                                 "%,.0f".format(value),
                                 color = Gold1,
@@ -360,6 +430,7 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
                         }
                     }
                 }
+            }
             }
             }
 
@@ -419,7 +490,7 @@ fun GracelandScreen(billing: BillingManager, activity: Activity) {
 
 /** Gold jumpsuit-style button with rhinestone trim and a gentle pulse. */
 @Composable
-fun ElvisButton(loading: Boolean, onClick: () -> Unit) {
+fun ElvisButton(place: ElvisPlace, loading: Boolean, onClick: () -> Unit) {
     val pulse = rememberInfiniteTransition(label = "pulse")
     val scale by pulse.animateFloat(
         initialValue = 1f,
@@ -479,9 +550,13 @@ fun ElvisButton(loading: Boolean, onClick: () -> Unit) {
                     fontFamily = FontFamily.Serif, letterSpacing = 2.sp
                 )
                 Text(
-                    "GRACELAND?",
-                    color = Ink, fontSize = 34.sp, fontWeight = FontWeight.Black,
-                    fontFamily = FontFamily.Serif, fontStyle = FontStyle.Italic
+                    place.label.uppercase() + "?",
+                    color = Ink,
+                    fontSize = if (place.label.length > 10) 26.sp else 34.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Serif,
+                    fontStyle = FontStyle.Italic,
+                    textAlign = TextAlign.Center
                 )
                 Text(
                     "♪ Tap to find out ♪",
@@ -489,6 +564,177 @@ fun ElvisButton(loading: Boolean, onClick: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+/** Horizontal row of chips letting a Pro user pick which Elvis site to measure to. */
+@Composable
+fun PlacePicker(selected: ElvisPlace, onSelect: (ElvisPlace) -> Unit, modifier: Modifier = Modifier) {
+    LazyRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = 24.dp)
+    ) {
+        items(ELVIS_PLACES) { place ->
+            val active = place == selected
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(if (active) Gold2 else Color.Black.copy(alpha = 0.45f))
+                    .clickable { onSelect(place) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    place.label,
+                    color = if (active) Ink else Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Normal
+                )
+            }
+        }
+    }
+}
+
+/** Bearing in degrees (0 = north, clockwise) from one lat/lon to another. */
+fun bearingTo(fromLat: Double, fromLon: Double, toLat: Double, toLon: Double): Float {
+    val lat1 = Math.toRadians(fromLat)
+    val lat2 = Math.toRadians(toLat)
+    val dLon = Math.toRadians(toLon - fromLon)
+    val y = sin(dLon) * cos(lat2)
+    val x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
+    val deg = Math.toDegrees(atan2(y, x))
+    return ((deg + 360) % 360).toFloat()
+}
+
+/**
+ * Points an arrow toward [destination] using the phone's location and orientation sensors.
+ * Free feature: works for whichever place is currently selected.
+ */
+@SuppressLint("MissingPermission")
+@Composable
+fun CompassView(destination: ElvisPlace) {
+    val context = LocalContext.current
+    var azimuth by remember { mutableFloatStateOf(0f) }      // which way the phone is facing (0 = north)
+    var bearing by remember { mutableStateOf<Float?>(null) } // which way the destination is
+    var hasSensor by remember { mutableStateOf(true) }
+
+    // Orientation sensor
+    DisposableEffect(Unit) {
+        val sm = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val rotationSensor = sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        if (rotationSensor == null) {
+            hasSensor = false
+        }
+        val listener = object : SensorEventListener {
+            val rotMatrix = FloatArray(9)
+            val orientation = FloatArray(3)
+            override fun onSensorChanged(event: SensorEvent) {
+                SensorManager.getRotationMatrixFromVector(rotMatrix, event.values)
+                SensorManager.getOrientation(rotMatrix, orientation)
+                azimuth = ((Math.toDegrees(orientation[0].toDouble()).toFloat() + 360) % 360)
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        if (rotationSensor != null) {
+            sm.registerListener(listener, rotationSensor, SensorManager.SENSOR_DELAY_UI)
+        }
+        onDispose { sm.unregisterListener(listener) }
+    }
+
+    // Make sure we have location permission before asking for a fix
+    var hasLocationPermission by remember {
+        mutableStateOf(
+            listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                .any { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
+        )
+    }
+    val compassPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants -> hasLocationPermission = grants.values.any { it } }
+    LaunchedEffect(Unit) {
+        if (!hasLocationPermission) {
+            compassPermissionLauncher.launch(
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            )
+        }
+    }
+
+    // One-shot location fix, just to work out the bearing
+    LaunchedEffect(destination, hasLocationPermission) {
+        if (!hasLocationPermission) return@LaunchedEffect
+        val fused = LocationServices.getFusedLocationProviderClient(context)
+        fused.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, null)
+            .addOnSuccessListener { loc ->
+                if (loc != null) {
+                    bearing = bearingTo(loc.latitude, loc.longitude, destination.lat, destination.lon)
+                }
+            }
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            "🧭  ${destination.label}",
+            color = Color.White,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Serif,
+            textAlign = TextAlign.Center
+        )
+        Box(
+            modifier = Modifier
+                .padding(top = 24.dp)
+                .size(220.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.45f)),
+            contentAlignment = Alignment.Center
+        ) {
+            // Dial with N/E/S/W
+            Canvas(Modifier.fillMaxSize()) {
+                drawCircle(Gold1.copy(alpha = 0.6f), style = Stroke(width = 2.dp.toPx()))
+            }
+            listOf("N" to 0f, "E" to 90f, "S" to 180f, "W" to 270f).forEach { (label, deg) ->
+                Text(
+                    label,
+                    color = if (label == "N") Gold1 else Color.White.copy(alpha = 0.7f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .rotate(deg)
+                        .padding(top = 8.dp)
+                        .align(Alignment.TopCenter)
+                        .rotate(-deg)
+                )
+            }
+            // Arrow, rotated to the destination's bearing relative to the phone's facing
+            val b = bearing
+            val pointer = (b?.minus(azimuth)) ?: 0f
+            Canvas(
+                modifier = Modifier
+                    .size(120.dp)
+                    .rotate(pointer)
+            ) {
+                val path = Path().apply {
+                    moveTo(size.width / 2, 6.dp.toPx())
+                    lineTo(size.width * 0.32f, size.height * 0.62f)
+                    lineTo(size.width / 2, size.height * 0.48f)
+                    lineTo(size.width * 0.68f, size.height * 0.62f)
+                    close()
+                }
+                drawPath(path, if (b != null) Color(0xFFC2185B) else Color.Gray, style = Fill)
+            }
+        }
+        Text(
+            when {
+                !hasLocationPermission -> "Location permission is needed to find the direction."
+                !hasSensor -> "This phone doesn't have a compass sensor."
+                bearing == null -> "Finding your location…"
+                else -> "Turn until the arrow points up"
+            },
+            color = Color.White.copy(alpha = 0.85f),
+            fontSize = 14.sp,
+            modifier = Modifier.padding(top = 20.dp),
+            textAlign = TextAlign.Center
+        )
     }
 }
 
