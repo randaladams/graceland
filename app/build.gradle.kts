@@ -12,7 +12,7 @@ android {
         applicationId = "com.adamselite.gracelandmiles"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
+        versionCode = 1.01
         versionName = "1.01"
     }
 
