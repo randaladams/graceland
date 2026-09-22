@@ -2,116 +2,169 @@ package com.adamselite.gracelandmiles
 
 import android.app.Activity
 import android.content.Context
-import com.android.billingclient.api.AcknowledgePurchaseParams
-import com.android.billingclient.api.BillingClient
-import com.android.billingclient.api.BillingClientStateListener
-import com.android.billingclient.api.BillingFlowParams
-import com.android.billingclient.api.BillingResult
-import com.android.billingclient.api.PendingPurchasesParams
-import com.android.billingclient.api.ProductDetails
-import com.android.billingclient.api.Purchase
-import com.android.billingclient.api.PurchasesUpdatedListener
-import com.android.billingclient.api.QueryProductDetailsParams
-import com.android.billingclient.api.QueryPurchasesParams
+import android.content.SharedPreferences
+import com.android.billingclient.api.*
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** One-time in-app purchase "pro_upgrade" that removes ads. Create it in Play Console. */
 class BillingManager(context: Context) : PurchasesUpdatedListener {
 
-    companion object { const val PRO_ID = "pro_upgrade" }
+    companion object {
+        const val PRO_ID = "pro_upgrade"
+    }
 
-    private val prefs = context.getSharedPreferences("graceland", Context.MODE_PRIVATE)
-    private val _isPro = MutableStateFlow(prefs.getBoolean("pro", false))
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences("graceland_prefs", Context.MODE_PRIVATE)
+
+    private val _isPro = MutableStateFlow(prefs.getBoolean("is_pro", false))
     val isPro: StateFlow<Boolean> = _isPro.asStateFlow()
+
+    // One-off diagnostic messages, shown as Toasts from MainActivity
+    private val _toastEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val toastEvents = _toastEvents.asSharedFlow()
 
     private var productDetails: ProductDetails? = null
 
-    private val client: BillingClient = BillingClient.newBuilder(context)
+    private val billingClient: BillingClient = BillingClient.newBuilder(context)
         .setListener(this)
         .enablePendingPurchases(
             PendingPurchasesParams.newBuilder().enableOneTimeProducts().build()
         )
         .build()
 
-    init { connect() }
-
-    private fun connect() {
-        client.startConnection(object : BillingClientStateListener {
+    fun connect() {
+        if (billingClient.isReady) {
+            loadProduct()
+            return
+        }
+        billingClient.startConnection(object : BillingClientStateListener {
             override fun onBillingSetupFinished(result: BillingResult) {
                 if (result.responseCode == BillingClient.BillingResponseCode.OK) {
+                    _toastEvents.tryEmit("Billing connected OK")
                     loadProduct()
                     restore()
+                } else {
+                    _toastEvents.tryEmit(
+                        "Billing setup FAILED: code=${result.responseCode} msg=${result.debugMessage}"
+                    )
                 }
             }
-            override fun onBillingServiceDisconnected() {}
+
+            override fun onBillingServiceDisconnected() {
+                _toastEvents.tryEmit("Billing service disconnected")
+            }
         })
     }
 
-    private fun loadProduct() {
-        val params = QueryProductDetailsParams.newBuilder()
-            .setProductList(
-                listOf(
-                    QueryProductDetailsParams.Product.newBuilder()
-                        .setProductId(PRO_ID)
-                        .setProductType(BillingClient.ProductType.INAPP)
-                        .build()
-                )
-            ).build()
-        client.queryProductDetailsAsync(params) { _, list ->
-            productDetails = list.productDetailsList.firstOrNull()
-        }
-    }
+    fun loadProduct() {
+        val product = QueryProductDetailsParams.Product.newBuilder()
+            .setProductId(PRO_ID)
+            .setProductType(BillingClient.ProductType.INAPP)
+            .build()
 
-    /** Re-checks existing purchases (restores Pro on a new phone or reinstall). */
-    fun restore() {
-        client.queryPurchasesAsync(
-            QueryPurchasesParams.newBuilder()
-                .setProductType(BillingClient.ProductType.INAPP).build()
-        ) { result, purchases ->
-            if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-                val owned = purchases.any {
-                    it.products.contains(PRO_ID) && it.purchaseState == Purchase.PurchaseState.PURCHASED
-                }
-                purchases.forEach(::handle)
-                if (!owned) setPro(false)
+        val params = QueryProductDetailsParams.newBuilder()
+            .setProductList(listOf(product))
+            .build()
+
+        billingClient.queryProductDetailsAsync(params) { result, queryResult ->
+            if (result.responseCode != BillingClient.BillingResponseCode.OK) {
+                _toastEvents.tryEmit(
+                    "Product query FAILED: code=${result.responseCode} msg=${result.debugMessage}"
+                )
+                return@queryProductDetailsAsync
+            }
+            val list = queryResult.productDetailsList
+            if (list.isEmpty()) {
+                _toastEvents.tryEmit("Product query OK but list is EMPTY (product id '$PRO_ID' not found for this build/account)")
+            } else {
+                productDetails = list.firstOrNull()
+                _toastEvents.tryEmit("Product loaded: ${productDetails?.productId} / ${productDetails?.oneTimePurchaseOfferDetails?.formattedPrice}")
             }
         }
     }
 
     fun launchUpgrade(activity: Activity) {
-        val details = productDetails ?: run { connect(); return }
-        val flow = BillingFlowParams.newBuilder()
-            .setProductDetailsParamsList(
-                listOf(
-                    BillingFlowParams.ProductDetailsParams.newBuilder()
-                        .setProductDetails(details).build()
-                )
-            ).build()
-        client.launchBillingFlow(activity, flow)
+        val details = productDetails
+        if (details == null) {
+            _toastEvents.tryEmit("Tap ignored: product details not loaded yet")
+            return
+        }
+
+        val offerToken = details.oneTimePurchaseOfferDetails?.offerToken
+        if (offerToken == null) {
+            _toastEvents.tryEmit("Tap ignored: no purchase offer token on product")
+            return
+        }
+
+        val productParams = BillingFlowParams.ProductDetailsParams.newBuilder()
+            .setProductDetails(details)
+            .setOfferToken(offerToken)
+            .build()
+
+        val flowParams = BillingFlowParams.newBuilder()
+            .setProductDetailsParamsList(listOf(productParams))
+            .build()
+
+        val result = billingClient.launchBillingFlow(activity, flowParams)
+        if (result.responseCode != BillingClient.BillingResponseCode.OK) {
+            _toastEvents.tryEmit(
+                "launchBillingFlow FAILED: code=${result.responseCode} msg=${result.debugMessage}"
+            )
+        } else {
+            _toastEvents.tryEmit("Purchase flow launched")
+        }
+    }
+
+    fun restore() {
+        val params = QueryPurchasesParams.newBuilder()
+            .setProductType(BillingClient.ProductType.INAPP)
+            .build()
+
+        billingClient.queryPurchasesAsync(params) { result, purchases ->
+            if (result.responseCode == BillingClient.BillingResponseCode.OK) {
+                purchases.forEach { handle(it) }
+            }
+        }
     }
 
     override fun onPurchasesUpdated(result: BillingResult, purchases: MutableList<Purchase>?) {
-        if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-            purchases?.forEach(::handle)
+        when (result.responseCode) {
+            BillingClient.BillingResponseCode.OK -> {
+                purchases?.forEach { handle(it) }
+            }
+            BillingClient.BillingResponseCode.USER_CANCELED -> {
+                _toastEvents.tryEmit("Purchase canceled by user")
+            }
+            else -> {
+                _toastEvents.tryEmit(
+                    "Purchase update error: code=${result.responseCode} msg=${result.debugMessage}"
+                )
+            }
         }
     }
 
     private fun handle(purchase: Purchase) {
-        if (!purchase.products.contains(PRO_ID)) return
-        if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) return
-        if (!purchase.isAcknowledged) {
-            client.acknowledgePurchase(
-                AcknowledgePurchaseParams.newBuilder()
-                    .setPurchaseToken(purchase.purchaseToken).build()
-            ) { }
-        }
-        setPro(true)
-    }
+        if (purchase.products.contains(PRO_ID) &&
+            purchase.purchaseState == Purchase.PurchaseState.PURCHASED
+        ) {
+            _isPro.value = true
+            prefs.edit().putBoolean("is_pro", true).apply()
 
-    private fun setPro(value: Boolean) {
-        prefs.edit().putBoolean("pro", value).apply()
-        _isPro.value = value
+            if (!purchase.isAcknowledged) {
+                val ackParams = AcknowledgePurchaseParams.newBuilder()
+                    .setPurchaseToken(purchase.purchaseToken)
+                    .build()
+                billingClient.acknowledgePurchase(ackParams) { ackResult ->
+                    if (ackResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                        _toastEvents.tryEmit("Purchase acknowledged - Pro unlocked!")
+                    } else {
+                        _toastEvents.tryEmit("Acknowledge FAILED: ${ackResult.debugMessage}")
+                    }
+                }
+            }
+        }
     }
 }
