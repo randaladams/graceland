@@ -60,7 +60,7 @@ class BillingManager(context: Context) : PurchasesUpdatedListener {
                 )
             ).build()
         client.queryProductDetailsAsync(params) { _, list ->
-            productDetails = list.firstOrNull()
+            productDetails = list.productDetailsList.firstOrNull()
         }
     }
 
