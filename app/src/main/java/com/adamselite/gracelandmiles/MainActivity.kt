@@ -190,6 +190,9 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
         }
     }
+    LaunchedEffect(Unit) {
+    billing.connect()
+    }
     val realIsPro by billing.isPro.collectAsState()
 
     // Debug-only override so a developer can flip Pro on/off without a real purchase.
