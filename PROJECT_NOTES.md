@@ -10,7 +10,7 @@ Living notes for picking this project back up after a break. Update this file wh
 - **Repo:** `graceland` (GitHub)
 - **Stack:** Kotlin + Jetpack Compose (Material3), Google Play Billing Library 8.0.0, Google Mobile Ads (AdMob), Google Play Services Location
 - **Min build tooling:** compileSdk/targetSdk 36, AGP 8.7.3, Gradle 8.10.2
-- **Current versionCode: 10.** The next change should bump to **11**. Always increase this before every Play Console upload — Play rejects a re-used versionCode.
+- **Current versionCode: 11.** The next change should bump to **12**. Always increase this before every Play Console upload — Play rejects a re-used versionCode.
 
 ## Architecture / key files
 
@@ -54,6 +54,8 @@ Living notes for picking this project back up after a break. Update this file wh
 
 6. **Compass N/E/S/W label positioning bug (fixed in v10):** rotating a `Text` directly doesn't move it around a circle — it rotates around its own tiny bounding box near where it started, so all four letters clustered near "N". Fix: wrap each label in its own `Modifier.fillMaxSize().rotate(deg)` box (so the rotation pivots around the full circle's center), with the label itself counter-rotated by `-deg` to stay upright.
 
+7. **`restore()` only ever granted Pro, never revoked it (fixed in v11).** The original `restore()` called `handle()` for any purchases found, but did nothing if none were found — so a refunded/canceled purchase left the local `is_pro` flag stuck on `true` forever, even though `restore()` runs on every app launch via `connect()`. Fixed by explicitly checking whether Play still shows an active, purchased `pro_upgrade` for the account; if not (and the local flag says Pro), it now flips back to free automatically. This means reverting a tester to free after a refund/cancel is just: cancel the order in Play Store → reopen the app (no more need to clear app storage or reinstall).
+
 ## Testing workflow
 
 - **Fast iteration (UI, features, anything not billing-related):** build debug APK via Actions → download → `adb install -r app-debug.apk`. Use `-r` to overwrite in place.
@@ -83,3 +85,4 @@ Living notes for picking this project back up after a break. Update this file wh
 - **v3–v7:** Billing Library 8.0.0 / targetSdk 36 upgrades, various versionCode fixes, stray-duplicate-folder incident + recovery via backup branch, compass/distance-result UI redesign (button replaced by compass + result panel per tester feedback, standalone compass icon removed).
 - **v8–v9:** Diagnosed and fixed the real Pro-purchase bug (`billing.connect()` was never called). Confirmed real purchase flow with a real charge (refunded) before realizing License Testing wasn't configured.
 - **v10:** Fixed compass N/E/S/W label positions all clustering near "N" (rotation-pivot bug).
+- **v11:** Fixed `restore()` to properly revoke local Pro status when Play no longer shows an active purchase (refund/cancel now self-corrects on next app launch, instead of requiring a manual app-data clear).
