@@ -12,8 +12,8 @@ android {
         applicationId = "com.adamselite.gracelandmiles"
         minSdk = 24
         targetSdk = 36
-        versionCode = 7
-        versionName = "7"
+        versionCode = 8
+        versionName = "8"
     }
 
     // Release signing: reads from environment variables so no secret ever lives
