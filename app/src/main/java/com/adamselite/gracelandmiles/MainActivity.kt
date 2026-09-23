@@ -271,9 +271,7 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
 
     // "Hold to peek": while the eye button is held, all text/controls fade out
     var peeking by remember { mutableStateOf(false) }
-    // Hold the nav icon: fades the UI too, and shows a compass pointing at Graceland
-    var navHeld by remember { mutableStateOf(false) }
-    val fadeUi = peeking || navHeld
+    val fadeUi = peeking
     val uiAlpha by animateFloatAsState(if (fadeUi) 0f else 1f, tween(150), label = "ui")
     BackHandler(enabled = !isPro && !showExit) { showExit = true }
     BackHandler(enabled = showExit) { }   // ignore Back while the exit screen counts down
@@ -327,6 +325,11 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
         )
     }
 
+    fun resetResult() {
+        meters = null
+        message = null
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         TimeBackground(hour, showScrim = !fadeUi)
 
@@ -341,7 +344,7 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                 modifier = Modifier.padding(top = 10.dp, start = 8.dp, end = 8.dp).alpha(uiAlpha)
             )
 
-            // Hold-to-peek and hold-for-compass buttons (+ a debug-only Pro switch, far left)
+            // Hold-to-peek button (+ a debug-only Pro switch, far left)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -358,10 +361,7 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                 } else {
                     Box(Modifier)
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PeekButton(onPeek = { peeking = it })
-                    NavButton(onHold = { navHeld = it })
-                }
+                PeekButton(onPeek = { peeking = it })
             }
 
             // Place picker (Pro feature): choose which Elvis site to measure to
@@ -384,35 +384,38 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                ElvisButton(place = selectedPlace, loading = loading, onClick = { onButtonPressed() })
-
                 val m = meters
-                if (message != null || m != null) {
-                    Column(
-                        modifier = Modifier
-                            .padding(top = 14.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(Color.Black.copy(alpha = 0.45f))
-                            .padding(horizontal = 20.dp, vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        if (message != null) {
+                when {
+                    m == null && message == null -> {
+                        ElvisButton(place = selectedPlace, loading = loading, onClick = { onButtonPressed() })
+                    }
+                    message != null -> {
+                        Column(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(Color.Black.copy(alpha = 0.45f))
+                                .clickable { resetResult() }
+                                .padding(horizontal = 20.dp, vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
                             Text(message!!, color = Color.White, fontSize = 18.sp, textAlign = TextAlign.Center)
-                        } else if (m != null) {
-                            val value = if (useKm) m / 1000.0 else m / METERS_PER_MILE
-                            val unit = if (useKm) "kilometers" else "miles"
-                            val intro = if (selectedPlace.label == "Graceland")
-                                "Graceland, Elvis's home, is" else "${selectedPlace.label} is"
-                            Text(intro, color = Color.White, fontSize = 15.sp, textAlign = TextAlign.Center)
                             Text(
-                                "%,.0f".format(value),
-                                color = Gold1,
-                                fontSize = 42.sp,
-                                fontWeight = FontWeight.Black,
-                                fontFamily = FontFamily.Serif
+                                "Tap to try again",
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(top = 6.dp)
                             )
-                            Text("$unit away", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium)
                         }
+                    }
+                    m != null -> {
+                        val value = if (useKm) m / 1000.0 else m / METERS_PER_MILE
+                        val unit = if (useKm) "kilometers" else "miles"
+                        ResultWithCompass(
+                            place = selectedPlace,
+                            valueText = "%,.0f".format(value),
+                            unit = unit,
+                            onTap = { resetResult() }
+                        )
                     }
                 }
             }
@@ -458,10 +461,6 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                 }
                 AdBanner(modifier = Modifier.fillMaxWidth())
             }
-        }
-
-        if (navHeld) {
-            CompassOverlay(destination = ELVIS_PLACES[0])
         }
 
         if (showExit) {
@@ -595,57 +594,17 @@ fun bearingTo(fromLat: Double, fromLon: Double, toLat: Double, toLon: Double): F
 }
 
 /**
- * Points an arrow toward [destination] using the phone's location and orientation sensors.
- * Free feature: works for whichever place is currently selected.
+ * Shown once a distance result is ready: the compass (using the phone's location and
+ * orientation sensors to point at [place]) together with the distance readout.
+ * Tapping it goes back to the button so the user can measure again.
  */
 @SuppressLint("MissingPermission")
-/** Small nav/compass icon button, matching PeekButton's style. Held, not tapped. */
 @Composable
-fun NavButton(onHold: (Boolean) -> Unit) {
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.5f))
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        onHold(true)
-                        try { tryAwaitRelease() } finally { onHold(false) }
-                    }
-                )
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(Modifier.size(20.dp)) {
-            drawCircle(Color.White, style = Stroke(width = 1.6.dp.toPx()))
-            val path = Path().apply {
-                moveTo(size.width * 0.5f, size.height * 0.08f)
-                lineTo(size.width * 0.34f, size.height * 0.58f)
-                lineTo(size.width * 0.5f, size.height * 0.44f)
-                lineTo(size.width * 0.66f, size.height * 0.58f)
-                close()
-            }
-            drawPath(path, Gold1, style = Fill)
-        }
-    }
-}
-
-/**
- * Full-screen compass shown while the nav icon is held. Always points at [destination]
- * (Graceland), since the other Elvis sites are close enough together that a separate
- * bearing for each isn't useful.
- */
-@Composable
-fun CompassOverlay(destination: ElvisPlace) {
+fun ResultWithCompass(place: ElvisPlace, valueText: String, unit: String, onTap: () -> Unit) {
     val context = LocalContext.current
     var azimuth by remember { mutableFloatStateOf(0f) }      // which way the phone is facing (0 = north)
     var bearing by remember { mutableStateOf<Float?>(null) } // which way the destination is
     var hasSensor by remember { mutableStateOf(true) }
-    val hasLocationPermission = remember {
-        listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-            .any { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
-    }
 
     // Orientation sensor
     DisposableEffect(Unit) {
@@ -668,97 +627,104 @@ fun CompassOverlay(destination: ElvisPlace) {
         onDispose { sm.unregisterListener(listener) }
     }
 
-    // One-shot location fix (only if permission was already granted earlier)
-    LaunchedEffect(hasLocationPermission) {
-        if (!hasLocationPermission) return@LaunchedEffect
+    // One-shot location fix — permission is already granted by the time a result exists
+    LaunchedEffect(place) {
         val fused = LocationServices.getFusedLocationProviderClient(context)
         fused.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, null)
             .addOnSuccessListener { loc ->
                 if (loc != null) {
-                    bearing = bearingTo(loc.latitude, loc.longitude, destination.lat, destination.lon)
+                    bearing = bearingTo(loc.latitude, loc.longitude, place.lat, place.lon)
                 }
             }
     }
 
-    Box(Modifier.fillMaxSize().systemBarsPadding(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .padding(horizontal = 18.dp, vertical = 10.dp)
-            ) {
+    val intro = if (place.label == "Graceland")
+        "Graceland, Elvis's home, is" else "${place.label} is"
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color.Black.copy(alpha = 0.45f))
+            .clickable { onTap() }
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+    ) {
+        Text(intro, color = Color.White, fontSize = 15.sp, textAlign = TextAlign.Center)
+        Text(
+            valueText,
+            color = Gold1,
+            fontSize = 42.sp,
+            fontWeight = FontWeight.Black,
+            fontFamily = FontFamily.Serif
+        )
+        Text(
+            "$unit in this direction",
+            color = Color.White,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center
+        )
+
+        Box(
+            modifier = Modifier
+                .padding(top = 18.dp)
+                .size(160.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.35f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(Modifier.fillMaxSize()) {
+                drawCircle(Gold1.copy(alpha = 0.6f), style = Stroke(width = 2.dp.toPx()))
+            }
+            listOf("N" to 0f, "E" to 90f, "S" to 180f, "W" to 270f).forEach { (label, deg) ->
                 Text(
-                    "${destination.label} is this way",
-                    color = Color.White,
-                    fontSize = 20.sp,
+                    label,
+                    color = if (label == "N") Gold1 else Color.White.copy(alpha = 0.7f),
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Serif,
-                    textAlign = TextAlign.Center
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .padding(top = 24.dp)
-                    .size(220.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.45f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Canvas(Modifier.fillMaxSize()) {
-                    drawCircle(Gold1.copy(alpha = 0.6f), style = Stroke(width = 2.dp.toPx()))
-                }
-                listOf("N" to 0f, "E" to 90f, "S" to 180f, "W" to 270f).forEach { (label, deg) ->
-                    Text(
-                        label,
-                        color = if (label == "N") Gold1 else Color.White.copy(alpha = 0.7f),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .rotate(deg)
-                            .padding(top = 8.dp)
-                            .align(Alignment.TopCenter)
-                            .rotate(-deg)
-                    )
-                }
-                // Arrow, rotated to the destination's bearing relative to the phone's facing
-                val b = bearing
-                val pointer = (b?.minus(azimuth)) ?: 0f
-                Canvas(
                     modifier = Modifier
-                        .size(120.dp)
-                        .rotate(pointer)
-                ) {
-                    val path = Path().apply {
-                        moveTo(size.width / 2, 6.dp.toPx())
-                        lineTo(size.width * 0.32f, size.height * 0.62f)
-                        lineTo(size.width / 2, size.height * 0.48f)
-                        lineTo(size.width * 0.68f, size.height * 0.62f)
-                        close()
-                    }
-                    drawPath(path, if (b != null) Color(0xFFC2185B) else Color.Gray, style = Fill)
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .padding(top = 20.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black.copy(alpha = 0.45f))
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
-            ) {
-                Text(
-                    when {
-                        !hasLocationPermission -> "Tap the button once first to allow location."
-                        !hasSensor -> "This phone doesn't have a compass sensor."
-                        bearing == null -> "Finding your location…"
-                        else -> "Turn until the arrow points up"
-                    },
-                    color = Color.White.copy(alpha = 0.9f),
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center
+                        .rotate(deg)
+                        .padding(top = 6.dp)
+                        .align(Alignment.TopCenter)
+                        .rotate(-deg)
                 )
+            }
+            // Arrow, rotated to the destination's bearing relative to the phone's facing
+            val b = bearing
+            val pointer = (b?.minus(azimuth)) ?: 0f
+            Canvas(
+                modifier = Modifier
+                    .size(86.dp)
+                    .rotate(pointer)
+            ) {
+                val path = Path().apply {
+                    moveTo(size.width / 2, 4.dp.toPx())
+                    lineTo(size.width * 0.32f, size.height * 0.62f)
+                    lineTo(size.width / 2, size.height * 0.48f)
+                    lineTo(size.width * 0.68f, size.height * 0.62f)
+                    close()
+                }
+                drawPath(path, if (b != null) Ruby else Color.Gray, style = Fill)
             }
         }
+
+        Text(
+            when {
+                !hasSensor -> "This phone doesn't have a compass sensor."
+                bearing == null -> "Finding your direction…"
+                else -> "Turn until the arrow points up"
+            },
+            color = Color.White.copy(alpha = 0.75f),
+            fontSize = 12.sp,
+            modifier = Modifier.padding(top = 10.dp),
+            textAlign = TextAlign.Center
+        )
+        Text(
+            "Tap to measure again",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 11.sp,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }
 
