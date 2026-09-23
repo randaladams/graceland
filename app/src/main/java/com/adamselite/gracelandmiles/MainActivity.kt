@@ -185,6 +185,11 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: Boolean = false) {
     val context = LocalContext.current
+    LaunchedEffect(billing) {
+        billing.toastEvents.collect { msg ->
+            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
     val realIsPro by billing.isPro.collectAsState()
 
     // Debug-only override so a developer can flip Pro on/off without a real purchase.
