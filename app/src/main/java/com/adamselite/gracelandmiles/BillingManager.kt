@@ -125,11 +125,22 @@ class BillingManager(context: Context) : PurchasesUpdatedListener {
 
         billingClient.queryPurchasesAsync(params) { result, purchases ->
             if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-                purchases.forEach { handle(it) }
+                val ownsPro = purchases.any { p ->
+                    p.products.contains(PRO_ID) && p.purchaseState == Purchase.PurchaseState.PURCHASED
+                }
+                if (ownsPro) {
+                    purchases.forEach { handle(it) }
+                } else if (_isPro.value) {
+                    // Local flag says Pro, but Play no longer shows an active purchase
+                    // for this account (refunded, canceled, or voided) — revoke it.
+                    _isPro.value = false
+                    prefs.edit().putBoolean("is_pro", false).apply()
+                    _toastEvents.tryEmit("Pro purchase no longer valid — reverted to free")
+                }
             }
         }
     }
-
+    
     override fun onPurchasesUpdated(result: BillingResult, purchases: MutableList<Purchase>?) {
         when (result.responseCode) {
             BillingClient.BillingResponseCode.OK -> {
