@@ -680,17 +680,22 @@ fun ResultWithCompass(place: ElvisPlace, valueText: String, unit: String, onTap:
                 drawCircle(Gold1.copy(alpha = 0.6f), style = Stroke(width = 2.dp.toPx()))
             }
             listOf("N" to 0f, "E" to 90f, "S" to 180f, "W" to 270f).forEach { (label, deg) ->
-                Text(
-                    label,
-                    color = if (label == "N") Gold1 else Color.White.copy(alpha = 0.7f),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
+                Box(
                     modifier = Modifier
-                        .rotate(deg)
-                        .padding(top = 6.dp)
-                        .align(Alignment.TopCenter)
-                        .rotate(-deg)
-                )
+                    .fillMaxSize()
+                    .rotate(deg)
+                ) {
+                    Text(
+                        label,
+                        color = if (label == "N") Gold1 else Color.White.copy(alpha = 0.7f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 6.dp)
+                            .rotate(-deg)
+                    )
+                }
             }
             // Arrow, rotated to the destination's bearing relative to the phone's facing
             val b = bearing
