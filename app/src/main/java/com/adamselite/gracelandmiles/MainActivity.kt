@@ -185,13 +185,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: Boolean = false) {
     val context = LocalContext.current
-    LaunchedEffect(billing) {
-        billing.toastEvents.collect { msg ->
-            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
-        }
-    }
     LaunchedEffect(Unit) {
-    billing.connect()
+        billing.connect()
     }
     val realIsPro by billing.isPro.collectAsState()
 
