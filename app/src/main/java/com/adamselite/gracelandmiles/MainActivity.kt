@@ -430,8 +430,9 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                         onTap = { resetResult() }
                     )
                 }
-            
-                // Unit slider
+                }
+                
+            // Unit slider
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).alpha(uiAlpha),
                 verticalAlignment = Alignment.CenterVertically
