@@ -430,7 +430,9 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                         onTap = { resetResult() }
                     )
                 }
-                }
+             }
+         }
+         }
                 
             // Unit slider
             Row(
