@@ -410,21 +410,28 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                             )
                         }
                     }
-                    m != null -> {
-                        val value = if (useKm) m / 1000.0 else m / METERS_PER_MILE
-                        val unit = if (useKm) "kilometers" else "miles"
-                        ResultWithCompass(
-                            place = selectedPlace,
-                            valueText = "%,.0f".format(value),
-                            unit = unit,
-                            onTap = { resetResult() }
-                        )
+                m != null -> {
+                    // Below ~0.1 mi / 160 m, whole miles/km round to "0" and read as broken.
+                    // Drop to feet or meters instead so a nearby result is still meaningful.
+                    val useSmallUnit = m < 160.0
+                    val value: Double
+                    val unit: String
+                    if (useSmallUnit) {
+                        value = if (useKm) m else m * 3.28084 // meters, or feet
+                        unit = if (useKm) "meters" else "feet"
+                    } else {
+                        value = if (useKm) m / 1000.0 else m / METERS_PER_MILE
+                        unit = if (useKm) "kilometers" else "miles"
                     }
+                    ResultWithCompass(
+                        place = selectedPlace,
+                        valueText = "%,.0f".format(value),
+                        unit = unit,
+                        onTap = { resetResult() }
+                    )
                 }
-            }
-            }
-
-            // Unit slider
+            
+                // Unit slider
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).alpha(uiAlpha),
                 verticalAlignment = Alignment.CenterVertically
