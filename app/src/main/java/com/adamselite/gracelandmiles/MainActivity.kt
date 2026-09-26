@@ -194,12 +194,14 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
     var debugProOverride by remember { mutableStateOf<Boolean?>(null) }
     val isPro = if (isDebugBuild) (debugProOverride ?: realIsPro) else realIsPro
 
-    var sliderPos by remember { mutableFloatStateOf(0f) } // 0 = miles, 1 = km
+    val prefs = remember { context.getSharedPreferences("graceland", Context.MODE_PRIVATE) }
+    var sliderPos by remember { mutableFloatStateOf(if (prefs.getBoolean("use_km", false)) 1f else 0f) } // 0 = miles, 1 = km
     val useKm = sliderPos >= 0.5f
     var meters by remember { mutableStateOf<Double?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
 
+    // Full-screen ad: every 4th lookup (free version only), shown between the tap and the result
     // Full-screen ad: every 4th lookup (free version only), shown between the tap and the result
     val prefs = remember { context.getSharedPreferences("graceland", Context.MODE_PRIVATE) }
     var interstitial by remember { mutableStateOf<InterstitialAd?>(null) }
