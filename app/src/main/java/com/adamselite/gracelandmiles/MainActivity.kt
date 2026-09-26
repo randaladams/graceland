@@ -337,6 +337,19 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
     Box(modifier = Modifier.fillMaxSize()) {
         TimeBackground(hour, showScrim = !fadeUi)
 
+        // Debug/reveal overlay: shows build version + Pro/Free while holding the eye icon
+        Text(
+            "v${BuildConfig.VERSION_NAME} · ${if (isPro) "PRO" else "FREE"}",
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .systemBarsPadding()
+                .padding(top = 4.dp)
+                .alpha(if (peeking) 1f else 0f)
+        )
+
         Column(
             modifier = Modifier.fillMaxSize().systemBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
