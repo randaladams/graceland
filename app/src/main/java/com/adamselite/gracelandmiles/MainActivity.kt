@@ -449,8 +449,6 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                         prefs.edit().putBoolean("use_km", sliderPos >= 0.5f).apply()
                     },
                     valueRange = 0f..1f,
-                    onValueChangeFinished = { sliderPos = if (sliderPos >= 0.5f) 1f else 0f },
-                    valueRange = 0f..1f,
                     colors = SliderDefaults.colors(
                         thumbColor = Gold1,
                         activeTrackColor = Gold2,
