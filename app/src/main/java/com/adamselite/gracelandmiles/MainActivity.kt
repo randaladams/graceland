@@ -444,7 +444,10 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                 Text("Imperial", color = Color.White, fontWeight = if (!useKm) FontWeight.Bold else FontWeight.Normal)
                 Slider(
                     value = sliderPos,
-                    onValueChange = { sliderPos = it },
+                    onValueChangeFinished = {
+                        sliderPos = if (sliderPos >= 0.5f) 1f else 0f
+                        prefs.edit().putBoolean("use_km", sliderPos >= 0.5f).apply()
+                    },
                     onValueChangeFinished = { sliderPos = if (sliderPos >= 0.5f) 1f else 0f },
                     valueRange = 0f..1f,
                     colors = SliderDefaults.colors(
