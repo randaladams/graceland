@@ -201,9 +201,8 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
     var message by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
 
+
     // Full-screen ad: every 4th lookup (free version only), shown between the tap and the result
-    // Full-screen ad: every 4th lookup (free version only), shown between the tap and the result
-    val prefs = remember { context.getSharedPreferences("graceland", Context.MODE_PRIVATE) }
     var interstitial by remember { mutableStateOf<InterstitialAd?>(null) }
     var adActive by remember { mutableStateOf(false) }
     var pendingMeters by remember { mutableStateOf<Double?>(null) }
@@ -444,10 +443,12 @@ fun GracelandScreen(billing: BillingManager, activity: Activity, isDebugBuild: B
                 Text("Imperial", color = Color.White, fontWeight = if (!useKm) FontWeight.Bold else FontWeight.Normal)
                 Slider(
                     value = sliderPos,
+                    onValueChange = { sliderPos = it },
                     onValueChangeFinished = {
                         sliderPos = if (sliderPos >= 0.5f) 1f else 0f
                         prefs.edit().putBoolean("use_km", sliderPos >= 0.5f).apply()
                     },
+                    valueRange = 0f..1f,
                     onValueChangeFinished = { sliderPos = if (sliderPos >= 0.5f) 1f else 0f },
                     valueRange = 0f..1f,
                     colors = SliderDefaults.colors(
