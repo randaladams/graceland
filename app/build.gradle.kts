@@ -61,4 +61,5 @@ dependencies {
     implementation("com.google.android.gms:play-services-ads:23.3.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("com.android.billingclient:billing-ktx:8.0.0")
+    implementation("androidx.fragment:fragment-ktx:1.9.1")
 }
