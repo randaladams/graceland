@@ -31,12 +31,16 @@ android {
         }
     }
 
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            if (System.getenv("RELEASE_KEYSTORE_PATH") != null) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+        buildTypes {
+            release {
+                isMinifyEnabled = true
+                proguardFiles(
+                    getDefaultProguardFile("proguard-android-optimize.txt"),
+                    "proguard-rules.pro"
+                )
+                if (System.getenv("RELEASE_KEYSTORE_PATH") != null) {
+                    signingConfig = signingConfigs.getByName("release")
+                }
         }
     }
     compileOptions {
